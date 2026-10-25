@@ -1,0 +1,13 @@
+package: api
+generate:
+  models: true
+  chi-server: true
+output: internal/generated/api.gen.go
+output-options:
+  # В лабораторной работе 1 нужны только эти операции
+  include-operation-ids:
+    - createTrip
+    - getTrip
+    - finishTrip
+    - health
+    - ready
