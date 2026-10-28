@@ -1,0 +1,124 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - depguard
+    - errcheck
+    - forbidigo
+    - gochecknoinits
+    - gocritic
+    - gocyclo
+    - goconst
+    - gosec
+    - govet
+    - ineffassign
+    - makezero
+    - prealloc
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - whitespace
+  settings:
+    depguard:
+      rules:
+        domain:
+          list-mode: lax
+          files:
+            - "**/internal/domain/**"
+          deny:
+            - pkg: net/http
+              desc: домен не знает про транспорт
+            - pkg: github.com/go-chi/chi
+              desc: домен не знает про транспорт
+            - pkg: github.com/jackc/pgx
+              desc: домен не знает про базу данных
+            - pkg: github.com/Masterminds/squirrel
+              desc: домен не знает про базу данных
+            - pkg: go.opentelemetry.io
+              desc: домен не знает про телеметрию
+            - pkg: github.com/Kerefall/template/internal/generated
+              desc: домен не знает про сгенерированный API
+        usecase:
+          list-mode: lax
+          files:
+            - "**/internal/usecase/**"
+            - "!$test"
+          deny:
+            - pkg: net/http
+              desc: usecase не знает про транспорт
+            - pkg: github.com/go-chi/chi
+              desc: usecase не знает про транспорт
+            - pkg: github.com/jackc/pgx
+              desc: usecase не знает про базу данных
+            - pkg: github.com/Masterminds/squirrel
+              desc: usecase не знает про базу данных
+            - pkg: github.com/Kerefall/template/internal/generated
+              desc: usecase не знает про сгенерированный API
+        http:
+          list-mode: lax
+          files:
+            - "**/internal/http/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/Kerefall/template/internal/repository
+              desc: транспорт ходит в usecase, а не в репозитории
+            - pkg: github.com/Kerefall/template/internal/infra
+              desc: транспорт не зависит от инфраструктуры
+    forbidigo:
+      forbid:
+        - pattern: ^context\.(Background|TODO)$
+          msg: context.Background и context.TODO допустимы только в main и в тестах
+        - pattern: ^slog\.(Default|Debug|Info|Warn|Error)$
+          msg: логгер передаётся зависимостью, глобальный slog не используем
+        - pattern: ^fmt\.Print(f|ln)?$
+          msg: пишем через slog
+    gocyclo:
+      min-complexity: 15
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: error-return
+        - name: error-naming
+        - name: error-strings
+        - name: if-return
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: receiver-naming
+        - name: unexported-return
+          disabled: true
+        - name: var-declaration
+  exclusions:
+    rules:
+      # В main и в тестах Background допустим.
+      - path: (^cmd/|_test\.go$)
+        linters:
+          - forbidigo
+      - path: _test\.go$
+        linters:
+          - gosec
+          - goconst
+          - unparam
+      # В main fmt.Fprintln в stderr - единственный способ сообщить об ошибке старта.
+      - path: ^cmd/
+        linters:
+          - forbidigo
+
+formatters:
+  enable:
+    - gofumpt
+    - gci
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/Kerefall/template)

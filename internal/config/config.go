@@ -69,94 +69,38 @@ func (c Config) validate() error {
 }
 
 func LoadConfig() (Config, error) {
-	cfg := Config{}
+	var cfg Config
+	var err error
 
-	value, ok := os.LookupEnv("HTTP_ADDR")
-	if !ok {
-		return Config{}, fmt.Errorf("required environment variable HTTP_ADDR is not set")
+	if cfg.HTTPAddr, err = requiredEnv("HTTP_ADDR"); err != nil {
+		return Config{}, err
 	}
-	cfg.HTTPAddr = value
-
-	value, ok = os.LookupEnv("LOG_LEVEL")
-	if !ok {
-		return Config{}, fmt.Errorf("required environment variable LOG_LEVEL is not set")
+	if cfg.LogLevel, err = requiredEnv("LOG_LEVEL"); err != nil {
+		return Config{}, err
 	}
-	cfg.LogLevel = value
-
-	value, ok = os.LookupEnv("SHUTDOWN_TIMEOUT")
-	if !ok {
-		return Config{}, fmt.Errorf("required environment variable SHUTDOWN_TIMEOUT is not set")
+	if cfg.DatabaseURL, err = requiredEnv("DATABASE_URL"); err != nil {
+		return Config{}, err
 	}
 
-	shutdownTimeout, err := time.ParseDuration(value)
-	if err != nil {
-		return Config{}, fmt.Errorf("invalid SHUTDOWN_TIMEOUT: %w", err)
+	if cfg.ShutdownTimeout, err = requiredDuration("SHUTDOWN_TIMEOUT"); err != nil {
+		return Config{}, err
 	}
-	cfg.ShutdownTimeout = shutdownTimeout
-
-	value, ok = os.LookupEnv("DATABASE_URL")
-	if !ok {
-		return Config{}, fmt.Errorf("required environment variable DATABASE_URL is not set")
+	if cfg.DatabaseMaxConns, err = requiredInt32("DATABASE_MAX_CONNS"); err != nil {
+		return Config{}, err
 	}
-	cfg.DatabaseURL = value
-
-	value, ok = os.LookupEnv("DATABASE_MAX_CONNS")
-	if !ok {
-		return Config{}, fmt.Errorf("required environment variable DATABASE_MAX_CONNS is not set")
+	if cfg.DatabaseMinConns, err = requiredInt32("DATABASE_MIN_CONNS"); err != nil {
+		return Config{}, err
 	}
-
-	maxConns, err := strconv.ParseInt(value, 10, 32)
-	if err != nil {
-		return Config{}, fmt.Errorf("invalid DATABASE_MAX_CONNS: %w", err)
+	if cfg.DatabaseMaxConnLifetime, err = requiredDuration("DATABASE_MAX_CONN_LIFETIME"); err != nil {
+		return Config{}, err
 	}
-	cfg.DatabaseMaxConns = int32(maxConns)
-
-	value, ok = os.LookupEnv("DATABASE_MIN_CONNS")
-	if !ok {
-		return Config{}, fmt.Errorf("required environment variable DATABASE_MIN_CONNS is not set")
+	if cfg.DatabaseConnectTimeout, err = requiredDuration("DATABASE_CONNECT_TIMEOUT"); err != nil {
+		return Config{}, err
+	}
+	if cfg.DatabaseQueryTimeout, err = requiredDuration("DATABASE_QUERY_TIMEOUT"); err != nil {
+		return Config{}, err
 	}
 
-	databaseMinConns, err := strconv.ParseInt(value, 10, 32)
-	if err != nil {
-		return Config{}, fmt.Errorf("invalid DATABASE_MIN_CONNS: %w", err)
-	}
-	cfg.DatabaseMinConns = int32(databaseMinConns)
-
-	value, ok = os.LookupEnv("DATABASE_MAX_CONN_LIFETIME")
-	if !ok {
-		return Config{}, fmt.Errorf("required environment variable DATABASE_MAX_CONN_LIFETIME is not set")
-	}
-
-	databaseMaxConnLifetime, err := time.ParseDuration(value)
-	if err != nil {
-		return Config{}, fmt.Errorf("invalid DATABASE_MAX_CONN_LIFETIME: %w", err)
-	}
-	cfg.DatabaseMaxConnLifetime = databaseMaxConnLifetime
-
-	value, ok = os.LookupEnv("DATABASE_CONNECT_TIMEOUT")
-	if !ok {
-		return Config{}, fmt.Errorf("required environment variable DATABASE_CONNECT_TIMEOUT is not set")
-	}
-
-	databaseConnectTimeout, err := time.ParseDuration(value)
-	if err != nil {
-		return Config{}, fmt.Errorf("invalid DATABASE_CONNECT_TIMEOUT: %w", err)
-	}
-	cfg.DatabaseConnectTimeout = databaseConnectTimeout
-
-	value, ok = os.LookupEnv("DATABASE_QUERY_TIMEOUT")
-	if !ok {
-		return Config{}, fmt.Errorf("required environment variable DATABASE_QUERY_TIMEOUT is not set")
-	}
-
-	databaseQueryTimeout, err := time.ParseDuration(value)
-	if err != nil {
-		return Config{}, fmt.Errorf("invalid DATABASE_QUERY_TIMEOUT: %w", err)
-	}
-	cfg.DatabaseQueryTimeout = databaseQueryTimeout
-
-	// Таймауты HTTP-сервера необязательны: у них есть безопасные значения по умолчанию,
-	// потому что tripgoctl кладёт в .env только переменные базы и сервера
 	if cfg.HTTPReadTimeout, err = optionalDuration("HTTP_READ_TIMEOUT", 10*time.Second); err != nil {
 		return Config{}, err
 	}
@@ -177,18 +121,53 @@ func LoadConfig() (Config, error) {
 	return cfg, nil
 }
 
-// optionalDuration читает длительность из окружения; если переменной нет
-// или она пустая, возвращает значение по умолчанию
+func requiredEnv(key string) (string, error) {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		return "", fmt.Errorf("required environment variable %s is not set", key)
+	}
+
+	return value, nil
+}
+
+func requiredDuration(key string) (time.Duration, error) {
+	value, err := requiredEnv(key)
+	if err != nil {
+		return 0, err
+	}
+
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %w", key, err)
+	}
+
+	return duration, nil
+}
+
+func requiredInt32(key string) (int32, error) {
+	value, err := requiredEnv(key)
+	if err != nil {
+		return 0, err
+	}
+
+	number, err := strconv.ParseInt(value, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %w", key, err)
+	}
+
+	return int32(number), nil
+}
+
 func optionalDuration(key string, def time.Duration) (time.Duration, error) {
 	value, ok := os.LookupEnv(key)
 	if !ok || value == "" {
 		return def, nil
 	}
 
-	d, err := time.ParseDuration(value)
+	duration, err := time.ParseDuration(value)
 	if err != nil {
 		return 0, fmt.Errorf("invalid %s: %w", key, err)
 	}
 
-	return d, nil
+	return duration, nil
 }
