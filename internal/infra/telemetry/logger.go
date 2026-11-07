@@ -10,12 +10,13 @@ import (
 
 // NewLogger создаёт JSON-логгер в stdout. Если запись сделана внутри спана
 // (логгер вызван с контекстом запроса), в неё добавляются trace_id и span_id.
-func NewLogger(level slog.Level) *slog.Logger {
+// serviceName попадает в поле service каждой записи.
+func NewLogger(level slog.Level, serviceName string) *slog.Logger {
 	handler := traceHandler{
 		Handler: slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}),
 	}
 
-	return slog.New(handler).With("service", "trip-service")
+	return slog.New(handler).With("service", serviceName)
 }
 
 type traceHandler struct {

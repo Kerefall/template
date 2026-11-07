@@ -26,6 +26,8 @@ import (
 // Version - версия сборки, попадает в service.version.
 var Version = "dev"
 
+const defaultServiceName = "trip-service"
+
 const metricsInterval = 10 * time.Second
 
 type Telemetry struct {
@@ -41,18 +43,9 @@ type Telemetry struct {
 func Setup(ctx context.Context, log *slog.Logger) (*Telemetry, error) {
 	otel.SetErrorHandler(errorHandler{log: log})
 
-	res, err := resource.New(ctx,
-		resource.WithTelemetrySDK(),
-		resource.WithAttributes(
-			attribute.String("service.name", "trip-service"),
-			attribute.String("service.version", Version),
-			attribute.String("service.namespace", "tripgo"),
-			attribute.String("deployment.environment", "local"),
-		),
-		resource.WithFromEnv(),
-	)
+	res, err := newResource(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("create resource: %w", err)
+		return nil, err
 	}
 
 	traceExporter, err := newTraceExporter(ctx)
@@ -91,6 +84,43 @@ func Setup(ctx context.Context, log *slog.Logger) (*Telemetry, error) {
 		tracerProvider: tracerProvider,
 		meterProvider:  meterProvider,
 	}, nil
+}
+
+// newResource собирает атрибуты сервиса: значения по умолчанию, поверх них
+// OTEL_SERVICE_NAME и OTEL_RESOURCE_ATTRIBUTES.
+func newResource(ctx context.Context) (*resource.Resource, error) {
+	res, err := resource.New(ctx,
+		resource.WithTelemetrySDK(),
+		resource.WithAttributes(
+			attribute.String("service.name", defaultServiceName),
+			attribute.String("service.version", Version),
+			attribute.String("service.namespace", "tripgo"),
+			attribute.String("deployment.environment", "local"),
+		),
+		resource.WithFromEnv(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create resource: %w", err)
+	}
+
+	return res, nil
+}
+
+// ServiceName возвращает service.name из того же ресурса, который использует
+// телеметрия, чтобы имя сервиса в логах, трейсах и метриках всегда совпадало.
+func ServiceName(ctx context.Context) (string, error) {
+	res, err := newResource(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	for _, kv := range res.Attributes() {
+		if string(kv.Key) == "service.name" {
+			return kv.Value.AsString(), nil
+		}
+	}
+
+	return defaultServiceName, nil
 }
 
 // errorHandler пишет ошибки экспорта телеметрии в лог.

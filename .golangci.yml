@@ -3,6 +3,8 @@ version: "2"
 run:
   timeout: 5m
   tests: true
+  build-tags:
+    - integration
 
 linters:
   default: none
@@ -102,11 +104,6 @@ linters:
       - path: (^cmd/|_test\.go$)
         linters:
           - forbidigo
-      - path: _test\.go$
-        linters:
-          - gosec
-          - goconst
-          - unparam
       # В main fmt.Fprintln в stderr - единственный способ сообщить об ошибке старта.
       - path: ^cmd/
         linters:
@@ -117,6 +114,8 @@ formatters:
     - gofumpt
     - gci
   settings:
+    gofumpt:
+      extra-rules: true
     gci:
       sections:
         - standard

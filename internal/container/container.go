@@ -48,7 +48,12 @@ func New(ctx context.Context, cfg config.Config) (*Container, error) {
 	if err := level.UnmarshalText([]byte(cfg.LogLevel)); err != nil {
 		return nil, fmt.Errorf("invalid LOG_LEVEL: %w", err)
 	}
-	logger := telemetry.NewLogger(level)
+
+	serviceName, err := telemetry.ServiceName(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve service name: %w", err)
+	}
+	logger := telemetry.NewLogger(level, serviceName)
 
 	tel, err := telemetry.Setup(ctx, logger)
 	if err != nil {

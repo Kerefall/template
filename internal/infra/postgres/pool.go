@@ -9,6 +9,7 @@ import (
 	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5/multitracer"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel/metric/noop"
 )
 
 type Config struct {
@@ -38,9 +39,14 @@ func NewPool(ctx context.Context, cfg Config) (*pgxpool.Pool, error) {
 	}
 
 	// Спан на каждый запрос создаёт otelpgx, а наш трейсер дописывает в него
-	// атрибуты db.* и записывает метрику длительности
+	// атрибуты db.* и записывает метрику длительности. Собственные метрики
+	// otelpgx отключены (noop), иначе db.client.operation.duration считалась
+	// бы дважды.
 	poolConfig.ConnConfig.Tracer = multitracer.New(
-		otelpgx.NewTracer(),
+		otelpgx.NewTracer(
+			otelpgx.WithTrimSQLInSpanName(),
+			otelpgx.WithMeterProvider(noop.NewMeterProvider()),
+		),
 		metricsTracer,
 	)
 

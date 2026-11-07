@@ -27,7 +27,7 @@ func newPool(t *testing.T) *pgxpool.Pool {
 
 	url := os.Getenv("DATABASE_URL")
 	if url == "" {
-		t.Skip("DATABASE_URL is not set")
+		t.Fatal("DATABASE_URL is not set: run `tripgoctl environment start`, load .env and apply migrations with `make migrate`")
 	}
 
 	pool, err := pgxpool.New(context.Background(), url)

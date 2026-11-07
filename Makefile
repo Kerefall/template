@@ -1,20 +1,7 @@
 -include .env
 export
 
-.PHONY: deps generate migrate migrate-down run test test-integration lint fmt check-layers
-
-# Зависимости, которые нужны этой работе (нужна сеть). После них - go mod tidy.
-deps:
-	go get -tool go.uber.org/mock/mockgen
-	go get go.uber.org/mock/gomock
-	go get github.com/stretchr/testify
-	go get github.com/exaring/otelpgx
-	go get go.opentelemetry.io/otel go.opentelemetry.io/otel/sdk go.opentelemetry.io/otel/sdk/metric
-	go get go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc
-	go get go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp
-	go get go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc
-	go get go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp
-	go mod tidy
+.PHONY: generate migrate migrate-down run test test-integration lint fmt check-layers
 
 # OpenAPI-код и моки (mocks_test.go рядом с кодом, коммитятся).
 generate:
