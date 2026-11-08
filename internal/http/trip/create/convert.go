@@ -12,8 +12,10 @@ import (
 )
 
 // parseInput разбирает тело запроса. Здесь проверяется только форма JSON
-
+// (обязательные поля, неизвестные поля, типы), а бизнес-правила проверяет домен.
 func parseInput(body []byte) (model.CreateTripInput, error) {
+	// Из структуры не отличить отсутствующее поле от нулевого значения,
+	// а по контракту все поля обязательны, поэтому смотрим на сырой JSON.
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return model.CreateTripInput{}, domainerror.InvalidRequest("request body must be a valid JSON object")
@@ -37,14 +39,15 @@ func parseInput(body []byte) (model.CreateTripInput, error) {
 		}
 	}
 
-	// Неизвестные поля запрещены (additionalProperties: false в контракте)
+	// Неизвестные поля запрещены (additionalProperties: false в контракте).
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
 
 	var data api.TripData
 	if err := dec.Decode(&data); err != nil {
 		return model.CreateTripInput{}, domainerror.InvalidRequest(
-			"request body has unknown fields or fields of the wrong type")
+			"request body has unknown fields or fields of the wrong type",
+		)
 	}
 
 	return model.CreateTripInput{

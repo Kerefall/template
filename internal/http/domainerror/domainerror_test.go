@@ -39,7 +39,7 @@ func TestProblem(t *testing.T) {
 
 			require.Equal(t, tc.wantStatus, status)
 			require.Equal(t, tc.wantCode, body.Code)
-			require.Equal(t, int32(tc.wantStatus), body.Status)
+			require.EqualValues(t, tc.wantStatus, body.Status)
 			require.NotEmpty(t, body.Type)
 			require.NotEmpty(t, body.Title)
 		})

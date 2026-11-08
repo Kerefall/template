@@ -44,7 +44,6 @@ func NewPool(ctx context.Context, cfg Config) (*pgxpool.Pool, error) {
 	// бы дважды.
 	poolConfig.ConnConfig.Tracer = multitracer.New(
 		otelpgx.NewTracer(
-			otelpgx.WithTrimSQLInSpanName(),
 			otelpgx.WithMeterProvider(noop.NewMeterProvider()),
 		),
 		metricsTracer,
