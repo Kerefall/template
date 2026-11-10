@@ -2,7 +2,8 @@
 .env
 .tripgo/
 
-# Сборка
+# Сборка и отчёты
 bin/
+coverage.out
 
 .DS_Store
