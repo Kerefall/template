@@ -1,3 +1,5 @@
+// Package router собирает HTTP-маршруты: связывает сгенерированный по OpenAPI
+// интерфейс с хендлерами и подключает middleware.
 package router
 
 import (
@@ -16,11 +18,13 @@ import (
 
 // Handlers - ручки сервиса. Контейнер собирает их и передаёт сюда.
 type Handlers struct {
-	CreateTrip func(w http.ResponseWriter, r *http.Request)
-	GetTrip    func(w http.ResponseWriter, r *http.Request, id uuid.UUID)
-	FinishTrip func(w http.ResponseWriter, r *http.Request, id uuid.UUID)
-	Health     func(w http.ResponseWriter, r *http.Request)
-	Ready      func(w http.ResponseWriter, r *http.Request)
+	CreateTrip    func(w http.ResponseWriter, r *http.Request)
+	GetTrip       func(w http.ResponseWriter, r *http.Request, id uuid.UUID)
+	FinishTrip    func(w http.ResponseWriter, r *http.Request, id uuid.UUID)
+	SavePosition  func(w http.ResponseWriter, r *http.Request, tripID uuid.UUID)
+	ListPositions func(w http.ResponseWriter, r *http.Request, tripID uuid.UUID)
+	Health        func(w http.ResponseWriter, r *http.Request)
+	Ready         func(w http.ResponseWriter, r *http.Request)
 }
 
 // server реализует сгенерированный интерфейс и передаёт вызовы хендлерам.
@@ -39,6 +43,14 @@ func (s server) GetTrip(w http.ResponseWriter, r *http.Request, tripID api.TripI
 
 func (s server) FinishTrip(w http.ResponseWriter, r *http.Request, tripID api.TripId) {
 	s.handlers.FinishTrip(w, r, tripID)
+}
+
+func (s server) CreateTripPosition(w http.ResponseWriter, r *http.Request, tripID api.TripId) {
+	s.handlers.SavePosition(w, r, tripID)
+}
+
+func (s server) ListTripPositions(w http.ResponseWriter, r *http.Request, tripID api.TripId) {
+	s.handlers.ListPositions(w, r, tripID)
 }
 
 func (s server) Health(w http.ResponseWriter, r *http.Request) {

@@ -15,7 +15,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Kerefall/template/internal/config"
+	"github.com/Kerefall/template/internal/gateway/push"
 	"github.com/Kerefall/template/internal/http/health"
+	listhttp "github.com/Kerefall/template/internal/http/position/list"
+	savehttp "github.com/Kerefall/template/internal/http/position/save"
 	"github.com/Kerefall/template/internal/http/ready"
 	"github.com/Kerefall/template/internal/http/router"
 	createhttp "github.com/Kerefall/template/internal/http/trip/create"
@@ -25,9 +28,12 @@ import (
 	"github.com/Kerefall/template/internal/infra/postgres/transaction"
 	"github.com/Kerefall/template/internal/infra/telemetry"
 	triprepo "github.com/Kerefall/template/internal/repository/trip"
+	listuc "github.com/Kerefall/template/internal/usecase/position/list"
+	saveuc "github.com/Kerefall/template/internal/usecase/position/save"
 	createuc "github.com/Kerefall/template/internal/usecase/trip/create"
 	finishuc "github.com/Kerefall/template/internal/usecase/trip/finish"
 	getuc "github.com/Kerefall/template/internal/usecase/trip/get"
+	"github.com/Kerefall/template/internal/worker/positions"
 )
 
 type Container struct {
@@ -36,6 +42,8 @@ type Container struct {
 	telemetry *telemetry.Telemetry
 	pool      *pgxpool.Pool
 	server    *http.Server
+	push      *push.Client
+	positions *positions.Component
 }
 
 // now отдаёт время в UTC с точностью до микросекунд: так оно хранится в PostgreSQL.
@@ -79,21 +87,50 @@ func New(ctx context.Context, cfg config.Config) (*Container, error) {
 	get := getuc.New(repo)
 	finish := finishuc.New(repo, txManager, tel.Metrics, logger, now)
 
+	pushClient := push.New(cfg.PushHTTPURL, cfg.PushRequestTimeout)
+	stale := positions.New(positions.Config{
+		CheckInterval:  cfg.PositionCheckInterval,
+		StaleAfter:     cfg.PositionStaleAfter,
+		Workers:        cfg.PositionWorkers,
+		QueueSize:      cfg.PositionQueueSize,
+		BatchSize:      cfg.PositionScanBatchSize,
+		RequestTimeout: cfg.PushRequestTimeout,
+	}, positions.Deps{
+		Repo:    repo,
+		Gateway: pushClient,
+		Metrics: tel.Metrics,
+		Log:     logger,
+	})
+	if err := tel.Metrics.RegisterPositionGauges(stale.QueueSize, stale.ActiveWorkers); err != nil {
+		pushClient.Close()
+		pool.Close()
+		_ = tel.Shutdown(context.WithoutCancel(ctx))
+		return nil, err
+	}
+
+	savePosition := saveuc.New(repo, txManager, tel.Metrics, stale, now)
+	listPositions := listuc.New(repo, repo)
+
 	timeout := cfg.DatabaseQueryTimeout
 	createHandler := createhttp.New(create, timeout, logger)
 	getHandler := gethttp.New(get, timeout, logger)
 	finishHandler := finishhttp.New(finish, timeout, logger)
+	savePositionHandler := savehttp.New(savePosition, timeout, logger)
+	listPositionsHandler := listhttp.New(listPositions, timeout, logger)
 	healthHandler := health.New()
 	readyHandler := ready.New(pool, timeout, logger)
 
 	handler, err := router.New(router.Handlers{
-		CreateTrip: createHandler.Handle,
-		GetTrip:    getHandler.Handle,
-		FinishTrip: finishHandler.Handle,
-		Health:     healthHandler.Handle,
-		Ready:      readyHandler.Handle,
+		CreateTrip:    createHandler.Handle,
+		GetTrip:       getHandler.Handle,
+		FinishTrip:    finishHandler.Handle,
+		SavePosition:  savePositionHandler.Handle,
+		ListPositions: listPositionsHandler.Handle,
+		Health:        healthHandler.Handle,
+		Ready:         readyHandler.Handle,
 	}, logger)
 	if err != nil {
+		pushClient.Close()
 		pool.Close()
 		_ = tel.Shutdown(context.WithoutCancel(ctx))
 		return nil, err
@@ -104,6 +141,8 @@ func New(ctx context.Context, cfg config.Config) (*Container, error) {
 		logger:    logger,
 		telemetry: tel,
 		pool:      pool,
+		push:      pushClient,
+		positions: stale,
 		server: &http.Server{
 			Addr:              cfg.HTTPAddr,
 			Handler:           handler,
@@ -119,6 +158,10 @@ func New(ctx context.Context, cfg config.Config) (*Container, error) {
 // остановки) или сервер не упадёт. После этого останавливает всё в пределах
 // SHUTDOWN_TIMEOUT.
 func (c *Container) Run(ctx context.Context) error {
+	// Фоновый компонент живёт отдельным контекстом приложения, а не контекстом сигнала:
+	// его останавливает только shutdown, и строго после HTTP-сервера.
+	c.positions.Start(context.WithoutCancel(ctx))
+
 	serverErr := make(chan error, 1)
 	go func() {
 		c.logger.Info("http server starting", "addr", c.cfg.HTTPAddr)
@@ -139,19 +182,35 @@ func (c *Container) Run(ctx context.Context) error {
 	return errors.Join(runErr, c.shutdown(ctx))
 }
 
-// shutdown: перестаём принимать запросы, ждём текущие, закрываем пул,
-// сбрасываем телеметрию. По истечении бюджета выходим принудительно.
+// shutdown останавливает сервис в фиксированном порядке:
+//  1. HTTP-сервер перестаёт принимать запросы и дожидается текущих;
+//  2. сканер, затем воркеры (очередь дорабатывается);
+//  3. закрываются HTTP-клиент и пул БД, сбрасывается телеметрия.
+//
+// Весь останов укладывается в SHUTDOWN_TIMEOUT, по его истечении выходим принудительно.
 func (c *Container) shutdown(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.cfg.ShutdownTimeout)
 	defer cancel()
 
 	var errs []error
 
+	// 1. Пока идут HTTP-запросы, они могут сохранять координаты и отменять задачи,
+	// поэтому очередь и воркеры должны жить, пока сервер не остановлен.
 	if err := c.server.Shutdown(shutdownCtx); err != nil {
 		c.logger.Error("graceful shutdown failed, closing server forcibly", "error", err)
 		_ = c.server.Close()
 		errs = append(errs, fmt.Errorf("shutdown http server: %w", err))
 	}
+
+	// 2. Сканер останавливается (новых задач нет), воркеры дорабатывают очередь
+	// в пределах того же бюджета.
+	if err := c.positions.Stop(shutdownCtx); err != nil {
+		c.logger.Error("position workers stopped with an error", "error", err)
+		errs = append(errs, err)
+	}
+
+	// 3. Закрываются HTTP-клиент и пул БД.
+	c.push.Close()
 
 	poolClosed := make(chan struct{})
 	go func() {

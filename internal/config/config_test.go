@@ -18,6 +18,7 @@ func setRequiredEnv(t *testing.T) {
 	t.Setenv("DATABASE_MAX_CONN_LIFETIME", "30m")
 	t.Setenv("DATABASE_CONNECT_TIMEOUT", "5s")
 	t.Setenv("DATABASE_QUERY_TIMEOUT", "3s")
+	t.Setenv("PUSH_HTTP_URL", "http://localhost:9000")
 }
 
 func TestLoadConfig(t *testing.T) {
@@ -79,5 +80,58 @@ func TestLoadConfigInvalidValues(t *testing.T) {
 
 	if _, err := LoadConfig(); err == nil {
 		t.Fatal("expected an error when DATABASE_MIN_CONNS > DATABASE_MAX_CONNS")
+	}
+}
+
+func TestLoadConfigPositionDefaults(t *testing.T) {
+	setRequiredEnv(t)
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.PositionCheckInterval != 30*time.Second ||
+		cfg.PositionStaleAfter != 60*time.Second ||
+		cfg.PositionWorkers != 4 ||
+		cfg.PositionQueueSize != 100 ||
+		cfg.PositionScanBatchSize != 100 ||
+		cfg.PushRequestTimeout != time.Second {
+		t.Errorf("unexpected default position settings: %+v", cfg)
+	}
+}
+
+func TestLoadConfigPositionOverrides(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("POSITION_WORKERS", "8")
+	t.Setenv("POSITION_QUEUE_SIZE", "10")
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.PositionWorkers != 8 || cfg.PositionQueueSize != 10 {
+		t.Errorf("overrides were not applied: %+v", cfg)
+	}
+}
+
+func TestLoadConfigInvalidPositionValues(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("POSITION_WORKERS", "0")
+
+	if _, err := LoadConfig(); err == nil {
+		t.Fatal("expected an error when POSITION_WORKERS is zero")
+	}
+}
+
+func TestLoadConfigMissingPushURL(t *testing.T) {
+	setRequiredEnv(t)
+	if err := os.Unsetenv("PUSH_HTTP_URL"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := LoadConfig(); err == nil {
+		t.Fatal("expected an error when PUSH_HTTP_URL is not set")
 	}
 }

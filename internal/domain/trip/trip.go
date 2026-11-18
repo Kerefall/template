@@ -30,8 +30,10 @@ type Trip struct {
 	Status     Status
 	StartedAt  time.Time
 	FinishedAt *time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	// LastPositionAt - время последней координаты (по recorded_at), пусто, пока координат не было.
+	LastPositionAt *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // New создаёт активную поездку и проверяет правила модели.
@@ -42,10 +44,10 @@ func New(id, userID, driverID uuid.UUID, start, end Point, price int64, now time
 	if driverID == uuid.Nil {
 		return Trip{}, &ValidationError{Field: "driver_id", Reason: "must not be empty"}
 	}
-	if err := start.validate("start_point"); err != nil {
+	if err := start.Validate("start_point"); err != nil {
 		return Trip{}, err
 	}
-	if err := end.validate("end_point"); err != nil {
+	if err := end.Validate("end_point"); err != nil {
 		return Trip{}, err
 	}
 	if price < 0 {
@@ -66,7 +68,8 @@ func New(id, userID, driverID uuid.UUID, start, end Point, price int64, now time
 	}, nil
 }
 
-func (p Point) validate(name string) error {
+// Validate проверяет диапазоны широты и долготы. name - имя поля для сообщения об ошибке.
+func (p Point) Validate(name string) error {
 	if p.Latitude < -90 || p.Latitude > 90 {
 		return &ValidationError{Field: name + ".latitude", Reason: "must be between -90 and 90"}
 	}

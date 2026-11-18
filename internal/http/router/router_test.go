@@ -22,11 +22,13 @@ func newRouter(t *testing.T) http.Handler {
 	okWithID := func(w http.ResponseWriter, _ *http.Request, _ uuid.UUID) { w.WriteHeader(http.StatusNoContent) }
 
 	handler, err := router.New(router.Handlers{
-		CreateTrip: ok,
-		GetTrip:    okWithID,
-		FinishTrip: okWithID,
-		Health:     ok,
-		Ready:      ok,
+		CreateTrip:    ok,
+		GetTrip:       okWithID,
+		FinishTrip:    okWithID,
+		SavePosition:  okWithID,
+		ListPositions: okWithID,
+		Health:        ok,
+		Ready:         ok,
 	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	require.NoError(t, err)
 
@@ -57,6 +59,9 @@ func TestRoutes(t *testing.T) {
 		{"get", http.MethodGet, "/api/v1/trips/" + id, http.StatusNoContent, ""},
 		{"finish", http.MethodPost, "/api/v1/trips/" + id + "/finish", http.StatusNoContent, ""},
 		{"health", http.MethodGet, "/health", http.StatusNoContent, ""},
+		// 501 здесь значил бы, что сгенерированная заглушка не заменена нашим методом.
+		{"save position", http.MethodPost, "/api/v1/trips/" + id + "/positions", http.StatusNoContent, ""},
+		{"list positions", http.MethodGet, "/api/v1/trips/" + id + "/positions", http.StatusNoContent, ""},
 		{"invalid trip id", http.MethodGet, "/api/v1/trips/abc", http.StatusBadRequest, "invalid_request"},
 		{"unknown path", http.MethodGet, "/nope", http.StatusNotFound, "not_found"},
 		{"wrong method", http.MethodDelete, "/api/v1/trips", http.StatusMethodNotAllowed, "method_not_allowed"},

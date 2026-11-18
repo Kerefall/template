@@ -35,6 +35,7 @@ func (r *Repository) Save(ctx context.Context, t domain.Trip) error {
 			string(t.Status),
 			t.StartedAt,
 			t.FinishedAt,
+			t.LastPositionAt,
 			t.CreatedAt,
 			t.UpdatedAt,
 		).
