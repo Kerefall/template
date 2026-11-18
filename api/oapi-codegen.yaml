@@ -1,0 +1,15 @@
+package: api
+generate:
+  models: true
+  chi-server: true
+output: internal/generated/api.gen.go
+output-options:
+  # Операции, которые реализует сервис
+  include-operation-ids:
+    - createTrip
+    - getTrip
+    - finishTrip
+    - createTripPosition
+    - listTripPositions
+    - health
+    - ready
